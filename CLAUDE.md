@@ -83,10 +83,17 @@ Opens the draw.io editor with a Mermaid.js diagram definition.
 5. **Use URLs for large content**: For very large diagrams, consider hosting the content and passing a URL
 6. **Return the URL to users**: Always provide the generated URL so users can open the diagram in their browser
 
+## CRITICAL: XML Well-Formedness
+
+When generating draw.io XML, the output **must** be well-formed XML:
+- **NEVER use double hyphens (`--`) inside XML comments.** `--` is illegal inside `<!-- -->` per the XML spec and causes parse errors. Use single hyphens or rephrase (e.g. `<!-- Order 1 to OrderItem -->` not `<!-- Order 1 --- OrderItem -->`).
+- Escape special characters in attribute values (`&amp;`, `&lt;`, `&gt;`, `&quot;`).
+
 ## Troubleshooting
 
 | Error | Cause | Solution |
 |-------|-------|----------|
+| "Double hyphen within comment" | `--` used inside XML comments | Remove double hyphens from comments; use words or single hyphens |
 | "URI malformed" | Special characters in CSV style attributes | Use hardcoded colors instead of `%column%` placeholders |
 | "Service nicht verfügbar" | draw.io CSV server unavailable | Retry later or use Mermaid instead |
 | Blank diagram | Invalid Mermaid/XML syntax | Check syntax, ensure proper escaping |

@@ -138,7 +138,8 @@ const tools =
     description:
       "Opens the draw.io editor with a diagram from XML content or a URL to XML content. " +
       "Use this to view, edit, or create diagrams in draw.io format. " +
-      "The XML should be valid draw.io/mxGraph XML format.",
+      "The XML should be valid draw.io/mxGraph XML format. " +
+      "IMPORTANT: Do NOT use double hyphens (--) inside XML comments, as this is invalid XML and will break the parser. Use single hyphens or rephrase instead.",
     inputSchema:
     {
       type: "object",

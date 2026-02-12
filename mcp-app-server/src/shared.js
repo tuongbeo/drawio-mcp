@@ -95,6 +95,7 @@ export function buildHtml(appWithDepsJs, pakoDeflateJs) {
     <div id="diagram-container"></div>
     <div id="toolbar">
       <button id="open-drawio">Open in draw.io</button>
+      <button id="copy-xml-btn">Copy to Clipboard</button>
       <button id="fullscreen-btn">Fullscreen</button>
     </div>
 
@@ -116,7 +117,9 @@ const containerEl = document.getElementById("diagram-container");
 const toolbarEl  = document.getElementById("toolbar");
 const openDrawioBtn  = document.getElementById("open-drawio");
 const fullscreenBtn  = document.getElementById("fullscreen-btn");
+const copyXmlBtn     = document.getElementById("copy-xml-btn");
 var drawioEditUrl = null;
+var currentXml = null;
 
 var app = new App({ name: "draw.io Diagram Viewer", version: "1.0.0" });
 
@@ -162,6 +165,7 @@ async function renderDiagram(xml) {
   containerEl.style.display = "block";
   toolbarEl.style.display = "flex";
   drawioEditUrl = generateDrawioEditUrl(xml);
+  currentXml = xml;
 
   GraphViewer.processElements();
 
@@ -182,6 +186,19 @@ app.ontoolresult = (result) => {
 };
 
 openDrawioBtn.addEventListener("click", () => { if (drawioEditUrl) app.openLink({ url: drawioEditUrl }); });
+copyXmlBtn.addEventListener("click", () => {
+  if (!currentXml) return;
+  var ta = document.createElement("textarea");
+  ta.value = currentXml;
+  ta.style.position = "fixed";
+  ta.style.left = "-9999px";
+  document.body.appendChild(ta);
+  ta.select();
+  document.execCommand("copy");
+  document.body.removeChild(ta);
+  copyXmlBtn.textContent = "Copied!";
+  setTimeout(() => { copyXmlBtn.textContent = "Copy to Clipboard"; }, 2000);
+});
 fullscreenBtn.addEventListener("click", () => { app.requestDisplayMode({ mode: "fullscreen" }); });
 
 app.connect();
@@ -229,12 +246,12 @@ export function createServer(html, serverOptions = {}) {
     {
       title: "Create Diagram",
       description:
-        "Creates and displays an interactive draw.io diagram. Pass draw.io XML (mxGraphModel format) to render it inline.",
+        "Creates and displays an interactive draw.io diagram. Pass draw.io XML (mxGraphModel format) to render it inline. IMPORTANT: The XML must be well-formed. Do NOT use double hyphens (--) inside XML comments, as this is invalid XML and will break the parser. Use single hyphens or rephrase instead (e.g. <!-- Order 1 to OrderItem --> not <!-- Order 1 --- OrderItem -->).",
       inputSchema: {
         xml: z
           .string()
           .describe(
-            "The draw.io XML content in mxGraphModel format to render as a diagram"
+            "The draw.io XML content in mxGraphModel format to render as a diagram. Must be well-formed XML: no double hyphens (--) inside comments, no unescaped special characters in attribute values."
           ),
       },
       _meta: { ui: { resourceUri } },
