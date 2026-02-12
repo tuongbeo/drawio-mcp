@@ -6,15 +6,35 @@ The official [draw.io](https://www.draw.io) MCP (Model Context Protocol) server 
 
 This repository offers three approaches for integrating draw.io with AI assistants. Pick the one that fits your setup:
 
-| | [MCP Tool Server](#mcp-tool-server) | [MCP App Server](#mcp-app-server) | [Project Instructions](#alternative-project-instructions-no-mcp-required) |
+| | [MCP App Server](#mcp-app-server) | [MCP Tool Server](#mcp-tool-server) | [Project Instructions](#alternative-project-instructions-no-mcp-required) |
 |---|---|---|---|
-| **How it works** | Opens diagrams in your browser | Renders diagrams inline in chat | Claude generates draw.io URLs via Python |
-| **Diagram output** | draw.io editor in a new tab | Interactive viewer embedded in conversation | Clickable link to draw.io |
-| **Requires installation** | Yes (npm package) | Yes (Node.js server or CF Worker) | No — just paste instructions |
-| **Supports XML, CSV, Mermaid** | ✅ All three | XML only | ✅ All three |
-| **Editable in draw.io** | ✅ Directly | Via "Open in draw.io" button | Via link |
-| **Works with** | Claude Desktop, any MCP client | Claude.ai, VS Code, any MCP Apps host | Claude.ai (with Projects) |
-| **Best for** | Local desktop workflows | Inline previews in chat | Quick setup, no install needed |
+| **How it works** | Renders diagrams inline in chat | Opens diagrams in your browser | Claude generates draw.io URLs via Python |
+| **Diagram output** | Interactive viewer embedded in conversation | draw.io editor in a new tab | Clickable link to draw.io |
+| **Requires installation** | No (hosted at `mcp.draw.io`) | Yes (npm package) | No — just paste instructions |
+| **Supports XML, CSV, Mermaid** | XML only | ✅ All three | ✅ All three |
+| **Editable in draw.io** | Via "Open in draw.io" button | ✅ Directly | Via link |
+| **Works with** | Claude.ai, VS Code, any MCP Apps host | Claude Desktop, any MCP client | Claude.ai (with Projects) |
+| **Best for** | Inline previews in chat | Local desktop workflows | Quick setup, no install needed |
+
+---
+
+## MCP App Server
+
+The MCP App server renders draw.io diagrams **inline** in AI chat interfaces using the [MCP Apps](https://modelcontextprotocol.io/docs/extensions/apps) protocol. Instead of opening a browser tab, diagrams appear directly in the conversation as interactive iframes.
+
+The official hosted endpoint is available at:
+
+```
+https://mcp.draw.io/mcp
+```
+
+Add this URL as a remote MCP server in Claude.ai or any MCP Apps-compatible host — no installation required.
+
+You can also run the server locally via Node.js or deploy your own instance to Cloudflare Workers.
+
+**[Full documentation →](mcp-app-server/README.md)**
+
+> **Note:** Inline diagram rendering requires an MCP host that supports the MCP Apps extension. In hosts without MCP Apps support, the tool still works but returns the XML as text.
 
 ---
 
@@ -25,18 +45,6 @@ The original MCP server that opens diagrams directly in the draw.io editor. Supp
 Quick start: `npx @drawio/mcp`
 
 **[Full documentation →](mcp-tool-server/README.md)**
-
----
-
-## MCP App Server
-
-The MCP App server renders draw.io diagrams **inline** in AI chat interfaces using the [MCP Apps](https://modelcontextprotocol.io/docs/extensions/apps) protocol. Instead of opening a browser tab, diagrams appear directly in the conversation as interactive iframes.
-
-It can run locally via Node.js or be deployed to Cloudflare Workers for a public endpoint without tunnels.
-
-**[Full documentation →](mcp-app-server/README.md)**
-
-> **Note:** Inline diagram rendering requires an MCP host that supports the MCP Apps extension. In hosts without MCP Apps support, the tool still works but returns the XML as text.
 
 ---
 
@@ -51,13 +59,13 @@ An alternative approach that works **without installing anything**. Add instruct
 ## Development
 
 ```bash
-# MCP Tool Server
-cd mcp-tool-server
+# MCP App Server
+cd mcp-app-server
 npm install
 npm start
 
-# MCP App Server
-cd mcp-app-server
+# MCP Tool Server
+cd mcp-tool-server
 npm install
 npm start
 ```

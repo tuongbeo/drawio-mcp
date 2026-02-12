@@ -21,14 +21,28 @@ The rendered diagram includes:
 - "Open in draw.io" button to edit the diagram in the full editor
 - Fullscreen mode
 
-## Installation
+## Official Hosted Endpoint
+
+The official draw.io MCP App server is hosted at:
+
+```
+https://mcp.draw.io/mcp
+```
+
+Add this URL as a remote MCP server in Claude.ai or any MCP Apps-compatible host — no installation or setup required.
+
+## Self-Hosting
+
+If you prefer to run your own instance, you can use Node.js or deploy to Cloudflare Workers.
+
+### Installation
 
 ```bash
 cd mcp-app-server
 npm install
 ```
 
-## Running (Node.js)
+### Running (Node.js)
 
 Start the HTTP server (for Claude.ai and other web-based hosts):
 

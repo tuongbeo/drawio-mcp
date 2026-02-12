@@ -4,11 +4,19 @@ The official draw.io MCP (Model Context Protocol) server that enables LLMs to op
 
 ## Repository Structure
 
+- **`mcp-app-server/`** — MCP App server (renders diagrams inline in chat via iframe). Hosted at `https://mcp.draw.io/mcp`. Can also be self-hosted via Node.js or Cloudflare Workers.
 - **`mcp-tool-server/`** — Original MCP tool server (stdio-based, opens browser). Published as `@drawio/mcp` on npm.
-- **`mcp-app-server/`** — MCP App server (renders diagrams inline in chat via iframe). Runs on Node.js or Cloudflare Workers.
 - **`project-instructions/`** — Claude Project instructions (no MCP required, no install).
 
 Each subdirectory has its own `CLAUDE.md` with implementation details.
+
+## MCP App Server Tool
+
+### `create_diagram`
+
+- **Input**: `{ xml: string }` - draw.io XML in mxGraphModel format
+- **Output**: Interactive diagram rendered inline via the draw.io viewer library
+- **Features**: Zoom, pan, layers, fullscreen, "Open in draw.io" button
 
 ## MCP Tool Server Tools
 
@@ -55,14 +63,6 @@ Opens the draw.io editor with a Mermaid.js diagram definition.
 - `content` (required): Mermaid.js syntax or URL to Mermaid file
 - `lightbox` (optional): Open in read-only lightbox mode (default: false)
 - `dark` (optional): Dark mode - "true" or "false" (default: false)
-
-## MCP App Server Tool
-
-### `create_diagram`
-
-- **Input**: `{ xml: string }` - draw.io XML in mxGraphModel format
-- **Output**: Interactive diagram rendered inline via the draw.io viewer library
-- **Features**: Zoom, pan, layers, fullscreen, "Open in draw.io" button
 
 ## Quick Decision Guide
 
