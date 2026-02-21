@@ -2,19 +2,19 @@
 
 The official [draw.io](https://www.draw.io) MCP (Model Context Protocol) server that enables LLMs to create and open diagrams in the draw.io editor.
 
-## Three Ways to Create Diagrams
+## Four Ways to Create Diagrams
 
-This repository offers three approaches for integrating draw.io with AI assistants. Pick the one that fits your setup:
+This repository offers four approaches for integrating draw.io with AI assistants. Pick the one that fits your setup:
 
-| | [MCP App Server](#mcp-app-server) | [MCP Tool Server](#mcp-tool-server) | [Project Instructions](#alternative-project-instructions-no-mcp-required) |
-|---|---|---|---|
-| **How it works** | Renders diagrams inline in chat | Opens diagrams in your browser | Claude generates draw.io URLs via Python |
-| **Diagram output** | Interactive viewer embedded in conversation | draw.io editor in a new tab | Clickable link to draw.io |
-| **Requires installation** | No (hosted at `mcp.draw.io`) | Yes (npm package) | No — just paste instructions |
-| **Supports XML, CSV, Mermaid** | XML only | ✅ All three | ✅ All three |
-| **Editable in draw.io** | Via "Open in draw.io" button | ✅ Directly | Via link |
-| **Works with** | Claude.ai, VS Code, any MCP Apps host | Claude Desktop, any MCP client | Claude.ai (with Projects) |
-| **Best for** | Inline previews in chat | Local desktop workflows | Quick setup, no install needed |
+| | [MCP App Server](#mcp-app-server) | [MCP Tool Server](#mcp-tool-server) | [Skill + CLI](#skill--cli) | [Project Instructions](#alternative-project-instructions-no-mcp-required) |
+|---|---|---|---|---|
+| **How it works** | Renders diagrams inline in chat | Opens diagrams in your browser | Generates `.drawio` files, optional PNG/SVG/PDF export | Claude generates draw.io URLs via Python |
+| **Diagram output** | Interactive viewer embedded in conversation | draw.io editor in a new tab | `.drawio` or `.drawio.png` / `.svg` / `.pdf` | Clickable link to draw.io |
+| **Requires installation** | No (hosted at `mcp.draw.io`) | Yes (npm package) | Copy skill file + draw.io Desktop | No — just paste instructions |
+| **Supports XML, CSV, Mermaid** | XML only | ✅ All three | XML only (native format) | ✅ All three |
+| **Editable in draw.io** | Via "Open in draw.io" button | ✅ Directly | ✅ Directly | Via link |
+| **Works with** | Claude.ai, VS Code, any MCP Apps host | Claude Desktop, any MCP client | Claude Code | Claude.ai (with Projects) |
+| **Best for** | Inline previews in chat | Local desktop workflows | Local development workflows | Quick setup, no install needed |
 
 ---
 
@@ -45,6 +45,16 @@ The original MCP server that opens diagrams directly in the draw.io editor. Supp
 Quick start: `npx @drawio/mcp`
 
 **[Full documentation →](mcp-tool-server/README.md)**
+
+---
+
+## Skill + CLI
+
+A Claude Code skill that generates native `.drawio` files, with optional export to PNG, SVG, or PDF (with embedded XML so the exported file remains editable in draw.io). No MCP setup required — just copy a skill file.
+
+By default, the skill writes a `.drawio` file and opens it in draw.io. Mention a format in your request (`/drawio png ...`) to export using the draw.io desktop CLI with `--embed-diagram`.
+
+**[Full documentation →](skill-cli/README.md)**
 
 ---
 
