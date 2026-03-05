@@ -328,6 +328,7 @@ export function createServer(html, serverOptions = {})
         "Space nodes at least 60px apart to avoid overlapping edges. " +
         "Use exitX/exitY/entryX/entryY (0-1) to control which side of a node an edge connects to, spreading connections across different sides. " +
         "Add explicit waypoints via <Array as=\"points\"><mxPoint x=\"...\" y=\"...\"/></Array> inside mxGeometry when edges would overlap. " +
+        "ARROWHEAD CLEARANCE: The final straight segment of an edge (between the last bend and the target, or source and first bend) must be long enough to fit the arrowhead (default size 6, configurable via startSize/endSize). If too short, the arrowhead overlaps the bend. Ensure at least 20px of straight segment. The orthogonal auto-router can place bends too close to shapes when nodes are nearly aligned - fix by increasing spacing or adding explicit waypoints. " +
         "CONTAINERS: For architecture diagrams and any diagram with nested elements, use proper parent-child containment (set parent=\"containerId\" on children, use relative coordinates). " +
         "Container types: (1) group style (style=\"group;\") for invisible containers with no connections - includes pointerEvents=0 so child connections are not captured by the container; " +
         "(2) swimlane style (style=\"swimlane;startSize=30;\") for labeled containers with a title bar - use when the container needs visual borders/headers or when the container itself has connections; " +
