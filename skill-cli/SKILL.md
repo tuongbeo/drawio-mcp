@@ -157,6 +157,13 @@ Every diagram must have this structure:
 
 ## Edge routing
 
+**CRITICAL: Every edge `mxCell` must contain a `<mxGeometry relative="1" as="geometry" />` child element**, even when there are no waypoints. Self-closing edge cells (e.g. `<mxCell ... edge="1" ... />`) are invalid and will not render correctly. Always use the expanded form:
+```xml
+<mxCell id="e1" edge="1" parent="1" source="a" target="b" style="...">
+  <mxGeometry relative="1" as="geometry" />
+</mxCell>
+```
+
 draw.io does **not** have built-in collision detection for edges. Plan layout and routing carefully:
 
 - Use `edgeStyle=orthogonalEdgeStyle` for right-angle connectors (most common)
