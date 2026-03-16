@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
 
 env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true   # suppress Node 20 deprecation warning
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   deploy:
@@ -27,23 +27,21 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: 'npm'
-          cache-dependency-path: mcp-app-server/package-lock.json
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install --include=dev
 
-      - name: Build
-        run: npm run build
+      - name: Build HTML (inline SDK bundles)
+        run: node_modules/.bin/tsx src/build-html.ts || npx --yes tsx src/build-html.ts
+
+      - name: Type-check & compile TypeScript
+        run: node_modules/.bin/tsc
 
       - name: Deploy to Cloudflare Workers
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           workingDirectory: mcp-app-server
-          # accountId omitted — wrangler infers it from the API token automatically.
-          # Set CLOUDFLARE_ACCOUNT_ID secret only if you have multiple CF accounts.
           command: deploy --minify
         env:
-          # Prevent wrangler from re-running the build step internally
           WRANGLER_SEND_METRICS: false
