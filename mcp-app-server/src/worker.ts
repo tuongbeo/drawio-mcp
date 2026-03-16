@@ -67,10 +67,23 @@ class WorkerTransport implements Transport {
     }
   }
 
-  /** Main entry: feed a JSON-RPC request in, get the response out */
-  processMessage(request: JSONRPCMessage): Promise<JSONRPCMessage> {
+  /** Main entry: feed a JSON-RPC request in, get the response out.
+   *  Notifications (no id field) don't expect a response — return null immediately.
+   */
+  processMessage(request: JSONRPCMessage): Promise<JSONRPCMessage | null> {
+    // Notifications have no id — fire-and-forget, no response expected
+    const isNotification =
+      !('id' in request) ||
+      (request as Record<string, unknown>).id === undefined ||
+      (request as Record<string, unknown>).id === null;
+
+    if (isNotification) {
+      this.onmessage?.(request);
+      return Promise.resolve(null);
+    }
+
     return new Promise((resolve, reject) => {
-      this._pendingResponse = { resolve, reject };
+      this._pendingResponse = { resolve: resolve as (msg: JSONRPCMessage) => void, reject };
 
       // Deliver to McpServer — triggers onmessage → handler → send()
       if (this.onmessage) {
@@ -87,6 +100,11 @@ class WorkerTransport implements Transport {
 async function handleMcpRequest(request: Request, env: WorkerEnv): Promise<Response> {
   if (request.method === 'OPTIONS') {
     return new Response(null, { status: 204, headers: CORS_HEADERS });
+  }
+
+  // GET /mcp — some clients probe the endpoint before connecting
+  if (request.method === 'GET') {
+    return corsResponse(JSON.stringify({ jsonrpc: '2.0', result: { status: 'ready' } }), 200);
   }
 
   if (request.method !== 'POST') {
@@ -121,14 +139,48 @@ async function handleMcpRequest(request: Request, env: WorkerEnv): Promise<Respo
   // Connect server to transport
   await server.connect(transport);
 
-  // Process the request
   try {
+    const method = (body as Record<string, unknown>).method as string | undefined;
+
+    // Notifications (no id) — fire-and-forget, return 202 immediately
+    const isNotification =
+      !('id' in body) ||
+      (body as Record<string, unknown>).id === undefined ||
+      (body as Record<string, unknown>).id === null;
+
+    if (isNotification) {
+      transport.onmessage?.(body);
+      return new Response(null, { status: 202, headers: CORS_HEADERS });
+    }
+
+    // Auto-initialize: each Worker request creates a fresh McpServer instance.
+    // For non-initialize requests the SDK requires the server to have already
+    // completed the initialize handshake, so we do it silently here.
+    if (method !== 'initialize') {
+      await transport.processMessage({
+        jsonrpc: '2.0',
+        id: '__auto_init__',
+        method: 'initialize',
+        params: {
+          protocolVersion: '2024-11-05',
+          capabilities: {},
+          clientInfo: { name: 'claude.ai', version: '1.0' },
+        },
+      } as JSONRPCMessage);
+      // Response discarded — server is now in initialized state
+    }
+
+    // Process the actual request
     const response = await Promise.race([
       transport.processMessage(body),
       new Promise<never>((_, reject) =>
         setTimeout(() => reject(new Error('Request timeout (25s)')), 25_000),
       ),
     ]);
+
+    if (response === null) {
+      return new Response(null, { status: 202, headers: CORS_HEADERS });
+    }
 
     return corsResponse(JSON.stringify(response), 200);
   } catch (err) {
