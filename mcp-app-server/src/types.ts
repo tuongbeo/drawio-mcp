@@ -164,7 +164,7 @@ export interface BatchUpdateInput {
 // ─── Cloudflare Worker Env ────────────────────────────────────────────────────
 
 export interface WorkerEnv {
-  DIAGRAM_SESSION: DurableObjectNamespace;
+  DIAGRAM_SESSION?: DurableObjectNamespace;
   ENVIRONMENT?: string;
 }
 
