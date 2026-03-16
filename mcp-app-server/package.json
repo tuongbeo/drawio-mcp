@@ -1,5 +1,5 @@
 {
-  "name": "drawio-mcp-app-server",
+  "name": "drawio-mcp",
   "version": "2.0.0",
   "description": "Draw.io remote MCP server — TypeScript, Cloudflare Workers, inline diagram rendering",
   "private": true,
