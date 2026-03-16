@@ -137,70 +137,149 @@ function buildUsecaseXml(entities: string[], relationships: Relationship[]): str
 }
 
 /**
- * Sequence: vertical lifelines + horizontal message arrows
+ * Sequence: vertical lifelines + horizontal message arrows at correct Y positions.
+ * Fix #5: messages use explicit mxPoint geometry instead of header-to-header routing,
+ * ensuring arrows appear at proper timestamps along each lifeline.
  */
 function buildSequenceXml(entities: string[], relationships: Relationship[]): string {
   const cells: string[] = [];
-  const LW = 120, LH = 40, GAP = 160, LIFETIME_H = 60;
+  const LW = 130, LH = 44, GAP = 170, MSG_START_Y = 110, MSG_GAP = 55;
+  const lifelineH = Math.max(relationships.length * MSG_GAP + 80, 200);
 
   entities.forEach((e, i) => {
-    const x = 100 + i * GAP;
-    // Header box
-    cells.push(vertex(`lh_${i}`, e, x, 40, LW, LH,
+    const x = 80 + i * GAP;
+    const centerX = x + LW / 2;
+
+    // Header box (top)
+    cells.push(vertex(`lh_${i}`, e, x, 30, LW, LH,
+      'rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;'));
+
+    // Lifeline — thin dashed vertical bar
+    cells.push(vertex(`ll_${i}`, '', centerX - 1, 74, 2, lifelineH,
+      'fillColor=#aaaaaa;strokeColor=none;'));
+
+    // Footer box (bottom) — mirrors header for visual closure
+    cells.push(vertex(`lf_${i}`, e, x, 74 + lifelineH, LW, LH,
       'rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;'));
-    // Lifeline (dashed vertical)
-    cells.push(vertex(`ll_${i}`, '', x + LW / 2 - 1, 80, 2,
-      Math.max(relationships.length * LIFETIME_H + 40, 100),
-      'fillColor=#000000;strokeColor=none;'));
   });
 
+  // Messages as explicit-geometry edges (horizontal arrows at correct Y)
   relationships.forEach((r, idx) => {
     const fromIdx = entities.indexOf(r.from);
     const toIdx = entities.indexOf(r.to);
     if (fromIdx < 0 || toIdx < 0) return;
-    const y = 120 + idx * LIFETIME_H;
-    const style = 'edgeStyle=orthogonalEdgeStyle;exitX=0.5;exitY=1;entryX=0.5;entryY=1;';
-    cells.push(edge(`msg_${idx}`, r.label ?? '', `lh_${fromIdx}`, `lh_${toIdx}`, style));
-    // Override with explicit position label
-    cells.push(vertex(`lbl_${idx}`, r.label ?? `step ${idx + 1}`,
-      Math.min(fromIdx, toIdx) * GAP + 100 + LW / 2,
-      y - 12, Math.abs(fromIdx - toIdx) * GAP, 24,
-      'text;html=1;align=center;verticalAlign=middle;resizable=0;'));
+
+    const y = MSG_START_Y + idx * MSG_GAP;
+    const fromX = 80 + fromIdx * GAP + LW / 2;
+    const toX = 80 + toIdx * GAP + LW / 2;
+
+    // Return messages (response) use dashed style
+    const isReturn = r.type === 'dependency' ||
+      (r.label ?? '').match(/^\d+\..*return|response|ok|result|data|redirect/i) !== null;
+
+    const msgStyle = isReturn
+      ? 'edgeStyle=orthogonalEdgeStyle;dashed=1;endArrow=open;strokeColor=#82b366;'
+      : 'edgeStyle=orthogonalEdgeStyle;endArrow=block;endFill=1;strokeColor=#555555;';
+
+    // Build edge with explicit Array-of-points geometry for precise horizontal placement
+    cells.push(
+      `    <mxCell id="msg_${idx}" value="${escapeXml(r.label ?? '')}" ` +
+      `style="${escapeXml(msgStyle)}" edge="1" parent="1">\n` +
+      `      <mxGeometry relative="1" as="geometry">\n` +
+      `        <Array as="points">\n` +
+      `          <mxPoint x="${fromX}" y="${y}"/>\n` +
+      `          <mxPoint x="${toX}" y="${y}"/>\n` +
+      `        </Array>\n` +
+      `      </mxGeometry>\n` +
+      `    </mxCell>`
+    );
   });
 
   return wrapRoot(cells);
 }
 
 /**
- * Activity: rounded start node + rectangle actions + diamond decisions + end node
+ * Activity: start node → actions → diamonds for decisions → end node.
+ * Fix #4: properly detects decision nodes by name pattern and uses
+ * the relationships array for branching edges with Yes/No labels.
  */
-function buildActivityXml(entities: string[], _relationships: Relationship[]): string {
+function buildActivityXml(entities: string[], relationships: Relationship[]): string {
   const cells: string[] = [];
-  const AW = 140, AH = 50, GAP = 80, startX = 200;
+  const AW = 160, AH = 50, DECISION_H = 60, GAP = 90, MAIN_X = 200, BRANCH_X = 460;
 
-  // Start
-  cells.push(vertex('start', '', startX, 40, 30, 30, SHAPE_STYLES.start_node));
+  // Detect which entities are decision nodes (name ends with ? or contains decision keywords)
+  const DECISION_RE = /\?$|^(is |check |valid|ok\?|decision)/i;
+  const isDecisionNode = (name: string) => DECISION_RE.test(name.trim());
+  const isStartNode = (name: string) => name.toLowerCase() === 'start';
+  const isEndNode = (name: string) => name.toLowerCase() === 'end' || name.toLowerCase() === 'end state';
 
+  // Assign stable cell IDs for each entity (slug the name)
+  const idOf = (name: string) => `n_${entities.indexOf(name).toString()}`;
+
+  // Start node
+  cells.push(vertex('start', '', MAIN_X + AW / 2 - 15, 20, 30, 30, SHAPE_STYLES.start_node));
+
+  // Lay out all nodes vertically; we'll use relationships for edges
   entities.forEach((e, i) => {
-    const y = 110 + i * GAP;
-    const isDecision = e.startsWith('?') || e.toLowerCase().startsWith('if ');
-    const label = isDecision ? e.replace(/^\?/, '').trim() : e;
-    const style = isDecision ? SHAPE_STYLES.diamond : SHAPE_STYLES.rounded_rectangle;
-    const h = isDecision ? AW / 2 : AH;
-    cells.push(vertex(`act_${i}`, label, startX - AW / 2 + 15, y, AW, h, style));
+    const y = 80 + i * GAP;
+    const id = idOf(e);
 
-    // Connect from previous
-    const from = i === 0 ? 'start' : `act_${i - 1}`;
-    cells.push(edge(`fl_${i}`, '', from, `act_${i}`,
-      'edgeStyle=orthogonalEdgeStyle;'));
+    if (isStartNode(e)) {
+      // Named "Start" entity — skip, we already have the start_node dot
+      return;
+    }
+    if (isEndNode(e)) {
+      cells.push(vertex(id, '', MAIN_X + AW / 2 - 15, y, 30, 30, SHAPE_STYLES.end_node));
+      return;
+    }
+
+    if (isDecisionNode(e)) {
+      cells.push(vertex(id, e, MAIN_X, y, AW, DECISION_H,
+        'rhombus;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;'));
+    } else {
+      cells.push(vertex(id, e, MAIN_X, y, AW, AH,
+        'rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;'));
+    }
   });
 
-  // End
-  const endY = 110 + entities.length * GAP;
-  cells.push(vertex('end', '', startX, endY, 30, 30, SHAPE_STYLES.end_node));
-  if (entities.length > 0) {
-    cells.push(edge('fl_end', '', `act_${entities.length - 1}`, 'end',
+  // Build edges: if relationships provided, use them (with labels + branching)
+  if (relationships.length > 0) {
+    // Track "No" branches — route them to the right (BRANCH_X)
+    const noBranches = new Set(
+      relationships
+        .filter(r => r.label?.toLowerCase() === 'no')
+        .map(r => r.from)
+    );
+
+    // Add branch column boxes for "Cancel" type nodes that receive No edges
+    const branchTargets = new Set(
+      relationships
+        .filter(r => r.label?.toLowerCase() === 'no')
+        .map(r => r.to)
+    );
+
+    relationships.forEach((r, i) => {
+      const fromId = isStartNode(r.from) ? 'start' : idOf(r.from);
+      const toId = isEndNode(r.to) ? idOf(r.to) : idOf(r.to);
+
+      // "No" branch exits right side of diamond; other exits go down
+      const isNo = r.label?.toLowerCase() === 'no';
+      const edgeStyle = isNo
+        ? 'edgeStyle=orthogonalEdgeStyle;exitX=1;exitY=0.5;exitDx=0;exitDy=0;'
+        : 'edgeStyle=orthogonalEdgeStyle;';
+
+      cells.push(edge(`e_${i}`, r.label ?? '', fromId, toId, edgeStyle));
+    });
+  } else {
+    // No relationships provided — build simple linear flow
+    cells.push(edge('fl_s', '', 'start', idOf(entities[0]),
       'edgeStyle=orthogonalEdgeStyle;'));
+    entities.forEach((e, i) => {
+      if (i < entities.length - 1) {
+        cells.push(edge(`fl_${i}`, '', idOf(e), idOf(entities[i + 1]),
+          'edgeStyle=orthogonalEdgeStyle;'));
+      }
+    });
   }
 
   return wrapRoot(cells);
@@ -332,9 +411,12 @@ export function buildTemplateXml(input: CreateFromTemplateInput): string {
 }
 
 // ─── Mermaid → draw.io XML via Kroki ─────────────────────────────────────────
+// NOTE: Kroki supports svg/png output for mermaid — NOT xml.
+// Fix: fetch SVG then embed as base64 image inside mxGraphModel.
+// All Mermaid types work: flowchart, sequenceDiagram, erDiagram, classDiagram, stateDiagram-v2.
 
 export async function mermaidToXml(mermaid: string): Promise<string> {
-  const resp = await fetch('https://kroki.io/mermaid/xml', {
+  const resp = await fetch('https://kroki.io/mermaid/svg', {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain' },
     body: mermaid,
@@ -343,7 +425,27 @@ export async function mermaidToXml(mermaid: string): Promise<string> {
     const body = await resp.text().catch(() => '');
     throw new Error(`Kroki conversion failed (${resp.status}): ${body.slice(0, 200)}`);
   }
-  return resp.text();
+  const svg = await resp.text();
+
+  // Parse canvas size from SVG attributes for proper viewport
+  const wMatch = svg.match(/width[=:\s"']+([\d.]+)/);
+  const hMatch = svg.match(/height[=:\s"']+([\d.]+)/);
+  const w = wMatch ? Math.min(Math.round(parseFloat(wMatch[1])), 1400) : 900;
+  const h = hMatch ? Math.min(Math.round(parseFloat(hMatch[1])), 1000) : 600;
+
+  // Encode SVG as base64 data URI (btoa is global in Workers + Node.js)
+  const b64 = btoa(unescape(encodeURIComponent(svg)));
+  const dataUri = `data:image/svg+xml;base64,${b64}`;
+
+  return `<mxGraphModel>
+  <root>
+    <mxCell id="0"/>
+    <mxCell id="1" parent="0"/>
+    <mxCell id="2" value="" style="shape=image;verticalLabelPosition=bottom;labelBackgroundColor=default;verticalAlign=top;aspect=fixed;image=${escapeXml(dataUri)};" vertex="1" parent="1">
+      <mxGeometry x="0" y="0" width="${w}" height="${h}" as="geometry"/>
+    </mxCell>
+  </root>
+</mxGraphModel>`;
 }
 
 // ─── pako-based XML compression (Workers-safe) ───────────────────────────────

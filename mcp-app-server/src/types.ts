@@ -164,7 +164,10 @@ export interface BatchUpdateInput {
 // ─── Cloudflare Worker Env ────────────────────────────────────────────────────
 
 export interface WorkerEnv {
+  /** Durable Objects session store (requires paid plan) */
   DIAGRAM_SESSION?: DurableObjectNamespace;
+  /** KV session store (free tier — run `wrangler kv namespace create DIAGRAM_SESSIONS`) */
+  DIAGRAM_SESSIONS?: KVNamespace;
   ENVIRONMENT?: string;
 }
 

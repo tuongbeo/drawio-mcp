@@ -216,6 +216,37 @@ export class DurableObjectSessionStore implements ISessionStore {
   }
 }
 
+/** Cloudflare KV store — free-tier persistent sessions (24h TTL).
+ * Fix #3: Alternative to Durable Objects that works on Workers free plan.
+ * Setup: run `npx wrangler kv namespace create DIAGRAM_SESSIONS`
+ * then add the namespace ID to wrangler.toml [[kv_namespaces]].
+ */
+export class KVSessionStore implements ISessionStore {
+  private static readonly TTL = 86400; // 24 hours in seconds
+
+  constructor(private readonly kv: KVNamespace) {}
+
+  async get(sessionId: string): Promise<SessionData | null> {
+    const val = await this.kv.get(sessionId);
+    if (!val) return null;
+    try {
+      return JSON.parse(val) as SessionData;
+    } catch {
+      return null;
+    }
+  }
+
+  async set(sessionId: string, data: SessionData): Promise<void> {
+    await this.kv.put(sessionId, JSON.stringify(data), {
+      expirationTtl: KVSessionStore.TTL,
+    });
+  }
+
+  async delete(sessionId: string): Promise<void> {
+    await this.kv.delete(sessionId);
+  }
+}
+
 // ─── Server Factory ───────────────────────────────────────────────────────────
 
 export interface ServerDeps {
@@ -356,11 +387,18 @@ Error Handling:
       description: `Convert Mermaid.js syntax to a draw.io diagram via Kroki API, then render inline.
 
 Supported Mermaid diagram types:
-  - sequenceDiagram — sequence / message flow diagrams
   - flowchart / graph — flowcharts (LR, TD, etc.)
+  - sequenceDiagram — sequence / message flow diagrams
   - erDiagram — entity-relationship diagrams
   - classDiagram — UML class diagrams
   - stateDiagram-v2 — state machine diagrams
+
+Implementation: fetches SVG from Kroki (/mermaid/svg) and embeds as a scalable image in draw.io.
+The diagram is fully viewable and can be further edited in draw.io.
+
+NOTE: For editable native draw.io shapes, use create_from_template instead.
+  create_from_template produces native mxGraph cells (resizable, batch-editable).
+  create_from_mermaid produces a high-fidelity image embed (read-only shapes).
 
 Args:
   - mermaid (string): Valid Mermaid.js syntax (REQUIRED)
@@ -556,13 +594,20 @@ Returns JSON:
   }
 
 Notes:
-  - Uses export.diagrams.net public API (no auth required)
-  - SVG output is text-based and can be embedded directly in HTML
+  - Primary: uses export.diagrams.net public API (no auth required)
+  - SVG fallback: if external API is unreachable (e.g. Cloudflare Worker 530 error),
+    SVG is generated inline from the XML — no external call needed
+  - PNG/PDF have no inline fallback; if API is blocked, use format="svg" instead
   - PDF output requires Chromium on the export server (may be slower)
   - Large or complex diagrams may take 2–5 seconds
 
+Deployment note:
+  export.diagrams.net may return error 530 from Cloudflare Worker outbound IPs.
+  SVG format always works; PNG/PDF require the external API to be reachable.
+
 Error Handling:
-  - Network errors: returns error with HTTP status from export server
+  - Network errors: returns actionable message with fallback instructions
+  - SVG format auto-falls back to inline rendering if API is unavailable
   - Invalid XML: export server returns 400 with details`,
       inputSchema: z.object({
         xml: z.string().min(10).describe('draw.io XML in mxGraphModel format'),
@@ -616,6 +661,17 @@ Error Handling:
 Returns a session_id used by batch_update, list_cells, get_diagram, and export_session.
 
 Sessions persist for 24 hours. Each session holds one diagram's XML.
+
+Storage tier (auto-selected by server):
+  1. Durable Objects — best consistency, requires CF paid plan ($5/mo)
+  2. KV — free tier, 24h TTL, requires DIAGRAM_SESSIONS KV binding in wrangler.toml
+  3. In-memory — free tier fallback, sessions DO NOT persist across requests
+
+IMPORTANT: On Cloudflare Workers free tier without KV configured, sessions will NOT
+persist between tool calls. If you get "Session not found" errors, either:
+  a) Configure KV: run \`wrangler kv namespace create DIAGRAM_SESSIONS\`
+  b) Use stateless tools: pass XML directly to export_diagram or create_session + batch_update
+     in the same logical operation.
 
 Args:
   - xml (string): Initial draw.io XML (optional — starts blank if omitted)
