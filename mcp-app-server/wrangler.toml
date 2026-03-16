@@ -13,8 +13,21 @@ ENVIRONMENT = "production"
 port = 8787
 local_protocol = "http"
 
-# ─── Durable Objects (Phase 3 — requires Workers PAID plan) ──────────────────
-# Uncomment ONLY if you have paid Cloudflare Workers plan ($5/mo).
+# ─── KV Session Storage (FREE tier — enables persistent sessions) ─────────────
+# To activate, run these commands once, then uncomment the block below:
+#
+#   npx wrangler kv namespace create DIAGRAM_SESSIONS
+#   npx wrangler kv namespace create DIAGRAM_SESSIONS --preview
+#
+# Replace the IDs with the output from the commands above, then redeploy.
+#
+# [[kv_namespaces]]
+# binding = "DIAGRAM_SESSIONS"
+# id = "YOUR_KV_NAMESPACE_ID_HERE"
+# preview_id = "YOUR_KV_PREVIEW_ID_HERE"
+
+# ─── Durable Objects (PAID plan only — $5/mo) ────────────────────────────────
+# Better consistency than KV. Uncomment ONLY with paid Cloudflare Workers plan.
 #
 # [[durable_objects.bindings]]
 # name = "DIAGRAM_SESSION"

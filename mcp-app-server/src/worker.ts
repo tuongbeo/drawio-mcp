@@ -10,7 +10,7 @@
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { WorkerEnv } from './types.js';
-import { createServer, DurableObjectSessionStore } from './shared.js';
+import { createServer, DurableObjectSessionStore, KVSessionStore } from './shared.js';
 import { DiagramSession } from './durable/DiagramSession.js';
 // Generated at build time — contains pre-inlined SDK bundles
 import { buildPrebuiltHtml } from './generated-html.js';
@@ -124,10 +124,15 @@ async function handleMcpRequest(request: Request, env: WorkerEnv): Promise<Respo
     );
   }
 
-  // Build session store (uses Durable Objects if available)
+  // Build session store — priority: Durable Objects > KV > in-memory
+  // Durable Objects: paid plan only ($5/mo) — best persistence
+  // KV: free tier, 24h TTL — run `wrangler kv namespace create DIAGRAM_SESSIONS` to enable
+  // in-memory: fallback, sessions lost between requests on free tier
   const sessionStore = env.DIAGRAM_SESSION
     ? new DurableObjectSessionStore(env.DIAGRAM_SESSION)
-    : buildFallbackStore();
+    : env.DIAGRAM_SESSIONS
+      ? new KVSessionStore(env.DIAGRAM_SESSIONS)
+      : buildFallbackStore();
 
   // Create transport + server
   const transport = new WorkerTransport();
@@ -203,8 +208,18 @@ async function handleMcpRequest(request: Request, env: WorkerEnv): Promise<Respo
 import { InMemorySessionStore } from './shared.js';
 
 function buildFallbackStore(): InMemorySessionStore {
-  // Warning: in-memory sessions don't persist across Worker instances/requests
-  // on free tier. Each request may see a fresh store.
+  // WARNING: in-memory sessions DON'T persist across Worker requests on free tier.
+  // Sessions created in one request will NOT be found in the next request.
+  //
+  // To enable persistent sessions without paying for DO:
+  //   1. Run: npx wrangler kv namespace create DIAGRAM_SESSIONS
+  //   2. Add to wrangler.toml:
+  //        [[kv_namespaces]]
+  //        binding = "DIAGRAM_SESSIONS"
+  //        id = "<your-namespace-id>"
+  //   3. Redeploy: npm run deploy
+  //
+  // The error "Session not found" on free tier is expected — switch to KV.
   return new InMemorySessionStore();
 }
 
