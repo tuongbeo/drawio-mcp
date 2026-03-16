@@ -8,6 +8,9 @@ on:
       - '.github/workflows/deploy-worker.yml'
   workflow_dispatch:
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true   # suppress Node 20 deprecation warning
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -37,6 +40,10 @@ jobs:
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: mcp-app-server
+          # accountId omitted — wrangler infers it from the API token automatically.
+          # Set CLOUDFLARE_ACCOUNT_ID secret only if you have multiple CF accounts.
           command: deploy --minify
+        env:
+          # Prevent wrangler from re-running the build step internally
+          WRANGLER_SEND_METRICS: false
