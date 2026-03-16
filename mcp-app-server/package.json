@@ -5,7 +5,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build:html": "node --loader ts-node/esm src/build-html.ts",
+    "build:html": "tsx src/build-html.ts",
     "build:tsc": "tsc",
     "build": "npm run build:html && npm run build:tsc",
     "deploy": "npm run build && wrangler deploy",
