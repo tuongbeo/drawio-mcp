@@ -24,12 +24,36 @@ const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization, Mcp-Session-Id',
+  'Access-Control-Expose-Headers': 'Mcp-Session-Id',
 };
 
 function corsResponse(body: string, status: number, contentType = 'application/json'): Response {
   return new Response(body, {
     status,
     headers: { 'Content-Type': contentType, ...CORS_HEADERS },
+  });
+}
+
+/**
+ * Inject stable Mcp-Session-Id vào tất cả MCP responses.
+ * Claude.ai dùng header này để persist "always allow" tool permissions.
+ * Với public server không có auth, một static ID là đủ vì mọi user
+ * dùng chung toolset — không cần per-user session.
+ */
+function injectSessionId(response: Response, sessionId: string): Response {
+  const headers = new Headers(response.headers);
+  headers.set('Mcp-Session-Id', sessionId);
+  const expose = headers.get('Access-Control-Expose-Headers') ?? '';
+  if (!expose.includes('Mcp-Session-Id')) {
+    headers.set(
+      'Access-Control-Expose-Headers',
+      expose ? `${expose}, Mcp-Session-Id` : 'Mcp-Session-Id',
+    );
+  }
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
   });
 }
 
@@ -248,7 +272,7 @@ export default {
     switch (url.pathname) {
       case '/mcp':
       case '/mcp/':
-        return handleMcpRequest(request, env);
+        return injectSessionId(await handleMcpRequest(request, env), 'drawio-public-server');
 
       case '/health':
       case '/':
