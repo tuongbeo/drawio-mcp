@@ -4,7 +4,7 @@ compatibility_date = "2024-01-01"
 compatibility_flags = ["nodejs_compat"]
 
 [build]
-command = "npm install --include=dev && npm run build:html && node_modules/.bin/tsc"
+command = "npm install --include=dev && node_modules/.bin/tsc"
 
 [vars]
 ENVIRONMENT = "production"
