@@ -196,7 +196,15 @@ async function handleMcpRequest(request: Request, env: WorkerEnv): Promise<Respo
           clientInfo: { name: 'claude.ai', version: '1.0' },
         },
       } as JSONRPCMessage);
-      // Response discarded — server is now in initialized state
+
+      // CRITICAL FIX: Complete the MCP handshake by sending notifications/initialized.
+      // McpServer stays in "waiting for initialized" state without this notification,
+      // silently dropping all tool calls → root cause of "No approval received" in Claude.ai.
+      await transport.processMessage({
+        jsonrpc: '2.0',
+        method: 'notifications/initialized',
+        params: {},
+      } as JSONRPCMessage);
     }
 
     // Process the actual request

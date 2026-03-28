@@ -118,6 +118,7 @@ export function buildPrebuiltHtml(xml: string, title: string, editUrl: string): 
   <a id="open-btn" href="\${escapedEditUrl}" target="_blank" rel="noopener">Open in draw.io ↗</a>
 </div>
 <div id="loading">Loading diagram…</div>
+<div id="diagram-container" style="padding:8px;display:none;overflow:auto;max-height:calc(100vh - 42px);"></div>
 <script>
 \${APP_BUNDLE}
 </script>
@@ -148,29 +149,54 @@ export function buildPrebuiltHtml(xml: string, title: string, editUrl: string): 
   function renderDiagram() {
     var loading = document.getElementById('loading');
     try {
-      if (typeof App !== 'undefined' && App && App.create) {
-        var container = document.createElement('div');
-        container.id = 'viewer-container';
-        container.style.cssText = 'width:100%;height:calc(100vh - 42px);';
-        document.body.appendChild(container);
-        if (loading) loading.style.display = 'none';
-        App.create({ container: container, xml: XML, editUrl: EDIT_URL });
+      // Step 1: Init MCP App SDK — connects to Claude.ai host so server is marked "ready"
+      if (typeof App !== 'undefined' && App && typeof App === 'function') {
+        try {
+          var app = new App({ name: 'draw.io Viewer', version: '2.0.0' }, {});
+          if (typeof PostMessageTransport !== 'undefined') {
+            var transport = new PostMessageTransport(window.parent, window);
+            app.connect(transport).catch(function() {});
+          }
+        } catch(appErr) {}
+      }
+
+      // Step 2: Render via Kroki.io SVG — no external scripts, works in sandboxed iframe
+      var xmlBytes = new TextEncoder().encode(XML);
+      var compressed = pako && pako.deflate ? pako.deflate(xmlBytes) : null;
+      if (compressed) {
+        var binary = '';
+        for (var i = 0; i < compressed.length; i++) binary += String.fromCharCode(compressed[i]);
+        var b64 = btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+        var krokiUrl = 'https://kroki.io/drawio/svg/' + b64;
+        var img = document.createElement('img');
+        img.style.cssText = 'max-width:100%;height:auto;display:block;margin:8px auto;';
+        img.alt = 'draw.io diagram';
+        img.onerror = function() { showDirectViewerLink(loading); };
+        img.onload = function() {
+          if (loading) loading.style.display = 'none';
+          var dc = document.getElementById('diagram-container');
+          if (dc) dc.style.display = 'block';
+        };
+        var dc = document.getElementById('diagram-container');
+        if (dc) dc.appendChild(img);
+        img.src = krokiUrl;
         return;
       }
-      var script = document.createElement('script');
-      script.src = 'https://viewer.diagrams.net/viewer-static.min.js';
-      script.onload = function() {
-        var compressed = compressXml(XML);
-        var iframe = document.createElement('iframe');
-        iframe.style.cssText = 'width:100%;height:calc(100vh - 42px);border:none;';
-        iframe.src = 'https://viewer.diagrams.net/?lightbox=1&xml=' + encodeURIComponent(compressed);
-        iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin');
-        if (loading) loading.replaceWith(iframe);
-        else document.body.appendChild(iframe);
-      };
-      document.head.appendChild(script);
+
+      // Step 3: Fallback — show link to draw.io
+      showDirectViewerLink(loading);
     } catch(e) {
       if (loading) loading.textContent = 'Error: ' + (e && e.message ? e.message : String(e));
+    }
+  }
+
+  function showDirectViewerLink(loading) {
+    if (loading) {
+      loading.innerHTML = '<div style="text-align:center;padding:20px;">' +
+        '<p style="color:#666;margin-bottom:12px;">Diagram ready</p>' +
+        '<a href="' + EDIT_URL + '" target="_blank" rel="noopener" style="display:inline-block;padding:8px 16px;' +
+        'background:#f08705;color:white;text-decoration:none;border-radius:4px;font-size:13px;">Open in draw.io ↗</a>' +
+        '</div>';
     }
   }
 

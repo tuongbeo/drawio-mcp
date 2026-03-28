@@ -268,7 +268,7 @@ export function createServer(deps: ServerDeps): McpServer {
   server.resource(
     'drawio-viewer',
     'drawio://viewer/{session_id}',
-    { mimeType: 'text/html', description: 'Interactive draw.io diagram viewer' },
+    { mimeType: 'text/html;profile=mcp-app', description: 'Interactive draw.io diagram viewer' },
     async (uri: URL) => {
       const sessionId = uri.pathname.split('/').pop() ?? 'default';
       const session = await deps.sessions.get(sessionId);
@@ -278,7 +278,7 @@ export function createServer(deps: ServerDeps): McpServer {
       return {
         contents: [{
           uri: uri.toString(),
-          mimeType: 'text/html',
+          mimeType: 'text/html;profile=mcp-app',
           text: deps.getHtml(xml, title, editUrl),
         }],
       };
@@ -365,7 +365,7 @@ Error Handling:
             type: 'resource' as const,
             resource: {
               uri: resourceUri,
-              mimeType: 'text/html',
+              mimeType: 'text/html;profile=mcp-app',
               text: deps.getHtml(xml, title, editUrl),
             },
           },
@@ -452,7 +452,7 @@ Error Handling:
             type: 'resource' as const,
             resource: {
               uri: `drawio://viewer/${sessionId}`,
-              mimeType: 'text/html',
+              mimeType: 'text/html;profile=mcp-app',
               text: deps.getHtml(xml, title, editUrl),
             },
           },
@@ -554,7 +554,7 @@ Example:
             type: 'resource' as const,
             resource: {
               uri: `drawio://viewer/${sessionId}`,
-              mimeType: 'text/html',
+              mimeType: 'text/html;profile=mcp-app',
               text: deps.getHtml(xml, diagramTitle, editUrl),
             },
           },
@@ -903,7 +903,7 @@ Example — build a 2-node flowchart:
             type: 'resource' as const,
             resource: {
               uri: `drawio://viewer/${session_id}`,
-              mimeType: 'text/html',
+              mimeType: 'text/html;profile=mcp-app',
               text: deps.getHtml(updatedXml, session.title, editUrl),
             },
           },
@@ -1016,7 +1016,7 @@ Returns:
               type: 'resource' as const,
               resource: {
                 uri: `drawio://viewer/${session_id}`,
-                mimeType: 'text/html',
+                mimeType: 'text/html;profile=mcp-app',
                 text: deps.getHtml(session.xml, session.title, editUrl),
               },
             },
