@@ -454,9 +454,14 @@ export async function mermaidToXml(mermaid: string): Promise<string> {
 export function compressXmlForUrl(xml: string): string {
   // Encode as UTF-8 bytes
   const bytes = new TextEncoder().encode(xml);
-  // Simple deflate via CompressionStream (available in Workers)
-  // Falls back to btoa when CompressionStream unavailable (Node.js dev)
-  return btoa(String.fromCharCode(...bytes));
+  // FIX: Use loop instead of spread operator to avoid "Maximum call stack size exceeded"
+  // on large arrays. String.fromCharCode(...largeArray) pushes all elements onto
+  // the call stack as arguments, which overflows for XMLs > ~10KB.
+  let binary = '';
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
 }
 
 export function buildDiagramUrl(xml: string): string {
