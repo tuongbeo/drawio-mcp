@@ -47,7 +47,7 @@ const PAKO_BUNDLE = loadBundle([
   'pako/dist/pako.min.js',
 ]);
 
-function getHtml(xml: string, title: string, editUrl: string): string {
+async function getHtml(xml: string, title: string, editUrl: string): Promise<string> {
   return buildHtml(APP_BUNDLE, PAKO_BUNDLE, xml, title, editUrl);
 }
 

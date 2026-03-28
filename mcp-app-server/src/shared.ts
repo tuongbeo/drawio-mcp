@@ -250,8 +250,8 @@ export class KVSessionStore implements ISessionStore {
 // ─── Server Factory ───────────────────────────────────────────────────────────
 
 export interface ServerDeps {
-  /** Pre-built HTML string (from generated-html.ts in Worker; built at runtime in Node.js) */
-  getHtml: (xml: string, title: string, editUrl: string) => string;
+  /** Async HTML builder — calls Kroki API server-side, returns lightweight SVG viewer (~2KB) */
+  getHtml: (xml: string, title: string, editUrl: string) => Promise<string>;
   /** Session persistence */
   sessions: ISessionStore;
 }
@@ -279,7 +279,7 @@ export function createServer(deps: ServerDeps): McpServer {
         contents: [{
           uri: uri.toString(),
           mimeType: 'text/html;profile=mcp-app',
-          text: deps.getHtml(xml, title, editUrl),
+          text: await deps.getHtml(xml, title, editUrl),
         }],
       };
     },
@@ -366,7 +366,7 @@ Error Handling:
             resource: {
               uri: resourceUri,
               mimeType: 'text/html;profile=mcp-app',
-              text: deps.getHtml(xml, title, editUrl),
+              text: await deps.getHtml(xml, title, editUrl),
             },
           },
           {
@@ -453,7 +453,7 @@ Error Handling:
             resource: {
               uri: `drawio://viewer/${sessionId}`,
               mimeType: 'text/html;profile=mcp-app',
-              text: deps.getHtml(xml, title, editUrl),
+              text: await deps.getHtml(xml, title, editUrl),
             },
           },
           {
@@ -555,7 +555,7 @@ Example:
             resource: {
               uri: `drawio://viewer/${sessionId}`,
               mimeType: 'text/html;profile=mcp-app',
-              text: deps.getHtml(xml, diagramTitle, editUrl),
+              text: await deps.getHtml(xml, diagramTitle, editUrl),
             },
           },
           {
@@ -904,7 +904,7 @@ Example — build a 2-node flowchart:
             resource: {
               uri: `drawio://viewer/${session_id}`,
               mimeType: 'text/html;profile=mcp-app',
-              text: deps.getHtml(updatedXml, session.title, editUrl),
+              text: await deps.getHtml(updatedXml, session.title, editUrl),
             },
           },
           {
@@ -1017,7 +1017,7 @@ Returns:
               resource: {
                 uri: `drawio://viewer/${session_id}`,
                 mimeType: 'text/html;profile=mcp-app',
-                text: deps.getHtml(session.xml, session.title, editUrl),
+                text: await deps.getHtml(session.xml, session.title, editUrl),
               },
             },
             { type: 'text' as const, text: summaryJson },

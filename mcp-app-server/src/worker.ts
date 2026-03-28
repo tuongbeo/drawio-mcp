@@ -1,65 +1,77 @@
 /**
- * worker.ts — Cloudflare Workers entry point
- * Web Standard APIs ONLY: fetch, Request, Response, URL, crypto, TextEncoder, btoa
- * No: Buffer, fs, path, require()
+ * worker.ts - Cloudflare Workers entry point
+ * Web Standard APIs ONLY: fetch, Request, Response, URL, crypto
  *
- * MCP transport: Stateless JSON-RPC over HTTP POST /mcp
- * Sessions: Cloudflare Durable Objects (DiagramSession)
- * HTML: Pre-built at build time via build-html.ts → generated-html.ts
+ * KEY FIX: buildViewerHtml() calls Kroki API server-side -> ~2KB HTML.
+ * Old approach embedded 266KB bundle in JSON -> Unexpected token error.
  */
 
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { WorkerEnv } from './types.js';
-import { createServer, DurableObjectSessionStore, KVSessionStore } from './shared.js';
+import { createServer, DurableObjectSessionStore, KVSessionStore, InMemorySessionStore } from './shared.js';
 import { DiagramSession } from './durable/DiagramSession.js';
-// Generated at build time — contains pre-inlined SDK bundles
-import { buildPrebuiltHtml } from './generated-html.js';
 
-// Re-export Durable Object class for wrangler binding
 export { DiagramSession };
 
-// ─── CORS Headers ────────────────────────────────────────────────────────────
+// --- Viewer: Kroki SVG in minimal HTML ---
 
-const CORS_HEADERS = {
+async function buildViewerHtml(xml: string, title: string, editUrl: string): Promise<string> {
+  let svg = '';
+  try {
+    const resp = await fetch('https://kroki.io/drawio/svg', {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+      body: xml,
+      signal: AbortSignal.timeout(8000),
+    } as RequestInit);
+    if (resp.ok) svg = await resp.text();
+  } catch { /* fallback to link-only */ }
+
+  const t = title.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+  const u = editUrl.replace(/"/g,'&quot;');
+  const body = svg
+    ? `<div class="d">${svg}</div>`
+    : `<div class="d"><div class="fb"><p>Preview unavailable</p><a class="bl" href="${u}" target="_blank" rel="noopener">Open in draw.io</a></div></div>`;
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<title>${t}</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#f5f5f5}
+.h{display:flex;align-items:center;justify-content:space-between;padding:8px 16px;background:#fff;border-bottom:1px solid #e0e0e0}
+.t{font-size:14px;font-weight:600;color:#333;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:70%}
+.btn{font-size:12px;color:#1565c0;text-decoration:none;padding:4px 10px;border:1px solid #1565c0;border-radius:4px}
+.btn:hover{background:#e3f2fd}
+.d{padding:16px;display:flex;align-items:flex-start;justify-content:center;min-height:calc(100vh - 42px)}
+.d svg{max-width:100%;height:auto}
+.fb{text-align:center;padding:40px 20px}
+.fb p{color:#999;font-size:14px;margin-bottom:16px}
+.bl{display:inline-block;padding:10px 20px;background:#f08705;color:#fff;text-decoration:none;border-radius:6px;font-size:14px}
+</style>
+</head>
+<body>
+<div class="h"><span class="t">${t}</span><a class="btn" href="${u}" target="_blank" rel="noopener">Open in draw.io</a></div>
+${body}
+</body>
+</html>`;
+}
+
+// --- CORS ---
+
+const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization, Mcp-Session-Id',
   'Access-Control-Expose-Headers': 'Mcp-Session-Id',
 };
 
-function corsResponse(body: string, status: number, contentType = 'application/json'): Response {
-  return new Response(body, {
-    status,
-    headers: { 'Content-Type': contentType, ...CORS_HEADERS },
-  });
+function cors(body: string, status: number, type = 'application/json'): Response {
+  return new Response(body, { status, headers: { 'Content-Type': type, ...CORS } });
 }
 
-/**
- * Inject stable Mcp-Session-Id vào tất cả MCP responses.
- * Claude.ai dùng header này để persist "always allow" tool permissions.
- * Với public server không có auth, một static ID là đủ vì mọi user
- * dùng chung toolset — không cần per-user session.
- */
-function injectSessionId(response: Response, sessionId: string): Response {
-  const headers = new Headers(response.headers);
-  headers.set('Mcp-Session-Id', sessionId);
-  const expose = headers.get('Access-Control-Expose-Headers') ?? '';
-  if (!expose.includes('Mcp-Session-Id')) {
-    headers.set(
-      'Access-Control-Expose-Headers',
-      expose ? `${expose}, Mcp-Session-Id` : 'Mcp-Session-Id',
-    );
-  }
-  return new Response(response.body, {
-    status: response.status,
-    statusText: response.statusText,
-    headers,
-  });
-}
-
-// ─── Worker Fetch Transport ──────────────────────────────────────────────────
-// Adapts MCP SDK's McpServer to the Web Standard Request/Response API.
-// Each request creates a fresh McpServer instance (stateless per-request).
+// --- MCP Transport ---
 
 import type { JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
@@ -68,229 +80,87 @@ class WorkerTransport implements Transport {
   onclose?: () => void;
   onerror?: (error: Error) => void;
   onmessage?: (message: JSONRPCMessage) => void;
+  private _p: { resolve: (m: JSONRPCMessage) => void; reject: (e: Error) => void } | null = null;
 
-  private _pendingResponse: {
-    resolve: (msg: JSONRPCMessage) => void;
-    reject: (err: Error) => void;
-  } | null = null;
+  async start(): Promise<void> {}
+  async close(): Promise<void> { this.onclose?.(); }
 
-  async start(): Promise<void> {
-    // No-op: connection starts when processMessage is called
+  async send(msg: JSONRPCMessage): Promise<void> {
+    if (this._p) { const { resolve } = this._p; this._p = null; resolve(msg); }
   }
 
-  async close(): Promise<void> {
-    this.onclose?.();
-  }
-
-  /** Called by McpServer to send the response back to the client */
-  async send(message: JSONRPCMessage): Promise<void> {
-    if (this._pendingResponse) {
-      const { resolve } = this._pendingResponse;
-      this._pendingResponse = null;
-      resolve(message);
-    }
-  }
-
-  /** Main entry: feed a JSON-RPC request in, get the response out.
-   *  Notifications (no id field) don't expect a response — return null immediately.
-   */
-  processMessage(request: JSONRPCMessage): Promise<JSONRPCMessage | null> {
-    // Notifications have no id — fire-and-forget, no response expected
-    const isNotification =
-      !('id' in request) ||
-      (request as Record<string, unknown>).id === undefined ||
-      (request as Record<string, unknown>).id === null;
-
-    if (isNotification) {
-      this.onmessage?.(request);
-      return Promise.resolve(null);
-    }
-
+  processMessage(req: JSONRPCMessage): Promise<JSONRPCMessage | null> {
+    const isNotif = !('id' in req) || (req as Record<string,unknown>).id == null;
+    if (isNotif) { this.onmessage?.(req); return Promise.resolve(null); }
     return new Promise((resolve, reject) => {
-      this._pendingResponse = { resolve: resolve as (msg: JSONRPCMessage) => void, reject };
-
-      // Deliver to McpServer — triggers onmessage → handler → send()
-      if (this.onmessage) {
-        this.onmessage(request);
-      } else {
-        reject(new Error('Transport not connected to server'));
-      }
+      this._p = { resolve: resolve as (m: JSONRPCMessage) => void, reject };
+      if (this.onmessage) this.onmessage(req);
+      else reject(new Error('Transport not connected'));
     });
   }
 }
 
-// ─── MCP Request Handler ─────────────────────────────────────────────────────
+// --- MCP Handler ---
 
-async function handleMcpRequest(request: Request, env: WorkerEnv): Promise<Response> {
-  if (request.method === 'OPTIONS') {
-    return new Response(null, { status: 204, headers: CORS_HEADERS });
-  }
-
-  // GET /mcp — some clients probe the endpoint before connecting
-  if (request.method === 'GET') {
-    return corsResponse(JSON.stringify({ jsonrpc: '2.0', result: { status: 'ready' } }), 200);
-  }
-
-  if (request.method !== 'POST') {
-    return corsResponse(
-      JSON.stringify({ error: 'Method Not Allowed — use POST /mcp' }),
-      405,
-    );
-  }
+async function handleMcp(req: Request, env: WorkerEnv): Promise<Response> {
+  if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
+  if (req.method === 'GET') return cors(JSON.stringify({ jsonrpc:'2.0', result:{ status:'ready' } }), 200);
+  if (req.method !== 'POST') return cors(JSON.stringify({ error:'Use POST /mcp' }), 405);
 
   let body: JSONRPCMessage;
-  try {
-    body = await request.json() as JSONRPCMessage;
-  } catch {
-    return corsResponse(
-      JSON.stringify({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Parse error: invalid JSON' } }),
-      400,
-    );
-  }
+  try { body = await req.json() as JSONRPCMessage; }
+  catch { return cors(JSON.stringify({ jsonrpc:'2.0',id:null,error:{ code:-32700,message:'Parse error' } }), 400); }
 
-  // Build session store — priority: Durable Objects > KV > in-memory
-  // Durable Objects: paid plan only ($5/mo) — best persistence
-  // KV: free tier, 24h TTL — run `wrangler kv namespace create DIAGRAM_SESSIONS` to enable
-  // in-memory: fallback, sessions lost between requests on free tier
-  const sessionStore = env.DIAGRAM_SESSION
+  const sessions = env.DIAGRAM_SESSION
     ? new DurableObjectSessionStore(env.DIAGRAM_SESSION)
-    : env.DIAGRAM_SESSIONS
-      ? new KVSessionStore(env.DIAGRAM_SESSIONS)
-      : buildFallbackStore();
+    : env.DIAGRAM_SESSIONS ? new KVSessionStore(env.DIAGRAM_SESSIONS) : new InMemorySessionStore();
 
-  // Create transport + server
   const transport = new WorkerTransport();
-  const server = createServer({
-    getHtml: (xml, title, editUrl) => buildPrebuiltHtml(xml, title, editUrl),
-    sessions: sessionStore,
-  });
-
-  // Connect server to transport
+  const server = createServer({ getHtml: buildViewerHtml, sessions });
   await server.connect(transport);
 
   try {
-    const method = (body as Record<string, unknown>).method as string | undefined;
+    const method = (body as Record<string,unknown>).method as string | undefined;
+    const isNotif = !('id' in body) || (body as Record<string,unknown>).id == null;
+    if (isNotif) { transport.onmessage?.(body); return new Response(null, { status: 202, headers: CORS }); }
 
-    // Notifications (no id) — fire-and-forget, return 202 immediately
-    const isNotification =
-      !('id' in body) ||
-      (body as Record<string, unknown>).id === undefined ||
-      (body as Record<string, unknown>).id === null;
-
-    if (isNotification) {
-      transport.onmessage?.(body);
-      return new Response(null, { status: 202, headers: CORS_HEADERS });
-    }
-
-    // Auto-initialize: each Worker request creates a fresh McpServer instance.
-    // For non-initialize requests the SDK requires the server to have already
-    // completed the initialize handshake, so we do it silently here.
     if (method !== 'initialize') {
       await transport.processMessage({
-        jsonrpc: '2.0',
-        id: '__auto_init__',
-        method: 'initialize',
-        params: {
-          protocolVersion: '2024-11-05',
-          capabilities: {},
-          clientInfo: { name: 'claude.ai', version: '1.0' },
-        },
+        jsonrpc:'2.0', id:'__init__', method:'initialize',
+        params:{ protocolVersion:'2024-11-05', capabilities:{}, clientInfo:{ name:'claude.ai', version:'1' } },
       } as JSONRPCMessage);
-
-      // CRITICAL FIX: Complete the MCP handshake by sending notifications/initialized.
-      // McpServer stays in "waiting for initialized" state without this notification,
-      // silently dropping all tool calls → root cause of "No approval received" in Claude.ai.
-      await transport.processMessage({
-        jsonrpc: '2.0',
-        method: 'notifications/initialized',
-        params: {},
-      } as JSONRPCMessage);
+      await transport.processMessage({ jsonrpc:'2.0', method:'notifications/initialized', params:{} } as JSONRPCMessage);
     }
 
-    // Process the actual request
-    const response = await Promise.race([
+    const result = await Promise.race([
       transport.processMessage(body),
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('Request timeout (25s)')), 25_000),
-      ),
+      new Promise<never>((_,rej) => setTimeout(() => rej(new Error('Timeout 25s')), 25000)),
     ]);
 
-    if (response === null) {
-      return new Response(null, { status: 202, headers: CORS_HEADERS });
-    }
-
-    return corsResponse(JSON.stringify(response), 200);
+    if (result === null) return new Response(null, { status: 202, headers: CORS });
+    return cors(JSON.stringify(result), 200);
   } catch (err) {
-    const id = 'id' in (body as object) ? (body as { id: unknown }).id : null;
-    return corsResponse(
-      JSON.stringify({
-        jsonrpc: '2.0',
-        id: id ?? null,
-        error: { code: -32603, message: `Internal error: ${String(err)}` },
-      }),
-      500,
-    );
+    const id = 'id' in (body as object) ? (body as { id:unknown }).id : null;
+    return cors(JSON.stringify({ jsonrpc:'2.0', id: id??null, error:{ code:-32603, message:String(err) } }), 500);
   } finally {
-    await server.close().catch(() => {/* ignore cleanup errors */});
+    await server.close().catch(() => {});
   }
 }
 
-// ─── Fallback in-memory store (free tier — no Durable Objects) ───────────────
-
-import { InMemorySessionStore } from './shared.js';
-
-function buildFallbackStore(): InMemorySessionStore {
-  // WARNING: in-memory sessions DON'T persist across Worker requests on free tier.
-  // Sessions created in one request will NOT be found in the next request.
-  //
-  // To enable persistent sessions without paying for DO:
-  //   1. Run: npx wrangler kv namespace create DIAGRAM_SESSIONS
-  //   2. Add to wrangler.toml:
-  //        [[kv_namespaces]]
-  //        binding = "DIAGRAM_SESSIONS"
-  //        id = "<your-namespace-id>"
-  //   3. Redeploy: npm run deploy
-  //
-  // The error "Session not found" on free tier is expected — switch to KV.
-  return new InMemorySessionStore();
-}
-
-// ─── Health Check ─────────────────────────────────────────────────────────────
-
-function handleHealth(): Response {
-  return corsResponse(
-    JSON.stringify({
-      status: 'ok',
-      service: 'drawio-mcp',
-      version: '2.0.0',
-      endpoint: '/mcp',
-      transport: 'streamable-http-stateless',
-      ts: new Date().toISOString(),
-    }),
-    200,
-  );
-}
-
-// ─── Main Fetch Handler ───────────────────────────────────────────────────────
+// --- Main ---
 
 export default {
   async fetch(request: Request, env: WorkerEnv): Promise<Response> {
-    const url = new URL(request.url);
-
-    switch (url.pathname) {
-      case '/mcp':
-      case '/mcp/':
-        return injectSessionId(await handleMcpRequest(request, env), 'drawio-public-server');
-
-      case '/health':
-      case '/':
-        return handleHealth();
-
-      default:
-        return corsResponse(
-          JSON.stringify({ error: `Not found: ${url.pathname}` }),
-          404,
-        );
+    const { pathname } = new URL(request.url);
+    if (pathname === '/mcp' || pathname === '/mcp/') {
+      const r = await handleMcp(request, env);
+      const h = new Headers(r.headers);
+      h.set('Mcp-Session-Id', 'drawio-public-server');
+      return new Response(r.body, { status: r.status, headers: h });
     }
+    if (pathname === '/health' || pathname === '/') {
+      return cors(JSON.stringify({ status:'ok', service:'drawio-mcp', version:'2.1.0', ts:new Date().toISOString() }), 200);
+    }
+    return cors(JSON.stringify({ error:`Not found: ${pathname}` }), 404);
   },
 };
